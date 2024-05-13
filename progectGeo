@@ -1,0 +1,78 @@
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
+ 
+int RXPint = 3;  // GPS module TX pin connected to Arduino pin 3
+int TXPint = 2;  // GPS module RX pin connected to Arduino pin 2
+#define#define GSM_TX_PIN 7  // GSM module TX pin connected to Arduino RX pin
+#define#define GSM_RX_PIN 8  // GSM module RX pin connected to Arduino TX pi
+#define ENGINE_CONTROL_PIN 13 // Pin to control engine relay
+int LED_PIN = 12;    // LED pin for status indication
+int GPSBaud=9600;
+
+SoftwareSerial gpsSerial(RXPin,TXPin); // Create a SoftwareSerial object for GPS
+SoftwareSerial gsmSerial(GSM_TX_PIN, GSM_RX_PIN); // Create a SoftwareSerial object for GSM
+
+TinyGPSPlus gps; // Create a TinyGPS++ object
+
+const float homeLatitude = 0; // my current latitude
+const float homeLongitude = 0 ; // my current longitude
+const float geofenceRadius = 10; // Geofence radius in meters
+
+bool isInGeofence(float lat, float lng) {
+  float distance = TinyGPSPlus::distanceBetween(lat, lng, homeLatitude, homeLongitude);
+  return distance <= geofenceRadius;
+}
+//the function above calculates the distance between the provided latitude and longitude coordinates (lat, lon) and the home location (homeLatitude, homeLongitude) using the TinyGPSPlus::distanceBetween function
+//It compares the calculated distance with the radius of the geofence (geofenceRadius)
+//If the distance is less than or equal to the geofence radius, it returns true, indicating that the point is within the geofence. Otherwise, it returns false.
+void setup() {
+  Serial.begin(9600);
+  gpsSerial.begin(9600); // Initialize GPS serial communication
+  gsmSerial.begin(9600); // Initialize GSM serial communication
+  pinMode(ENGINE_CONTROL_PIN, OUTPUT); // Set engine control pin as output
+  pinMode(LED_PIN, OUTPUT);
+}
+
+void loop() { // this sketch displays information every time a new sentence is correctly encoded
+  while (gpsSerial.available() > 0) {
+    if (gps.encode(gpsSerial.read())) {
+      if (gps.location.isValid()) {
+        float latitude = gps.location.lat();
+        float longitude = gps.location.lng();
+        //this part enters a loop that continues as long as there is data available on the gpsSerial serial port.
+//Inside the loop, it reads the incoming byte from the gpsSerial port and passes it to the gps.encode() function.
+//If the gps.encode() function returns true, indicating that a complete GPS sentence has been received and successfully parsed, it checks if the GPS location data is valid.
+//If the location data is valid, it retrieves the latitude and longitude coordinates using the gps.location.lat() and gps.location.lng() functions, respectively.
+        
+        if (!isInGeofence(latitude, longitude)) {
+          digitalWrite(LED_PIN,HIGH); // Turn on LED to indicate out of geofence
+          sendSMS("Car Theft Alert: Car has moved out of geofence!");
+          stopEngine(); // Stop the engine
+        } else {
+          digitalWrite(LED_PIN,LOW); // Turn off LED if within geofence
+        }
+        // the above bit is continuosly checking if the location coordinates are within the geofence radius and if not it trigggers those actions listed.
+        
+        Serial.print("Latitude: "); // latitude string is printed
+        Serial.println(latitude, 6); // latitude string is printed followed by the value with 6 decimal 
+        Serial.print("Longitude: "); // longitude string is printed 
+        Serial.println(longitude, 6); // longitude string is printed followed by the value with 6 decimal 
+      }
+    }
+  }
+}
+
+void sendSMS(String message) {
+  gsmSerial.println("AT+CMGF=1"); // this command Sets the SMS mode to text
+  delay(100); //this delay allows the GSM module to process the command
+  gsmSerial.print("AT+CMGS=\"+447592746578\"\r"); //  this command sets the sms text to my phone number
+  delay(100);
+  gsmSerial.println(message); //this line sends the actual message 
+  delay(100);
+  
+}
+ 
+void stopEngine() {
+  digitalWrite(ENGINE_CONTROL_PIN, HIGH); // Activate the relay to stop the engine
+  delay(1000); // Wait for engine to stop
+}
